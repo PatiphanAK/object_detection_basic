@@ -24,3 +24,5 @@ temp/
 *.png.bak
 
 .venv/
+uv.lock
+.python-version
