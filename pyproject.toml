@@ -1,0 +1,19 @@
+[project]
+name = "object-basic"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.121.2",
+    "matplotlib>=3.10.7",
+    "numpy>=2.3.4",
+    "opencv-python>=4.11.0.86",
+    "pandas>=2.3.3",
+    "pillow>=12.0.0",
+    "python-multipart>=0.0.20",
+    "pytorch-gradcam>=0.2.1",
+    "roboflow>=1.2.11",
+    "ultralytics>=8.3.228",
+    "uvicorn[standard]>=0.38.0",
+]
