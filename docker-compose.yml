@@ -1,17 +1,17 @@
 version: "3.8"
-
 services:
-  # FastAPI YOLO Service
   yolo-api:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: yolo-inference:latest # ตั้งชื่อ image
     container_name: yolo-inference-api
     ports:
       - "8000:8000"
     volumes:
-      - ./uploads:/app/uploads
-      - ./results:/app/results
-      - ./gradcam_results:/app/gradcam_results
-      - ./best.pt:/app/best.pt # Mount model
+      - uploads:/app/uploads # ใช้ named volume แทน bind mount
+      - results:/app/results
+      - gradcam_results:/app/gradcam_results
     environment:
       - MODEL_PATH=best.pt
       - PYTHONUNBUFFERED=1
@@ -21,8 +21,15 @@ services:
     labels:
       - "prometheus.scrape=true"
       - "prometheus.port=8000"
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 4G
+        reservations:
+          cpus: "1.0"
+          memory: 2G
 
-  # Prometheus
   prometheus:
     image: prom/prometheus:latest
     container_name: prometheus
@@ -40,7 +47,6 @@ services:
     networks:
       - monitoring
 
-  # Grafana
   grafana:
     image: grafana/grafana:latest
     container_name: grafana
@@ -51,8 +57,8 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboards:/var/lib/grafana/dashboards
     environment:
-      - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
       - GF_USERS_ALLOW_SIGN_UP=false
     restart: unless-stopped
     networks:
@@ -60,7 +66,6 @@ services:
     depends_on:
       - prometheus
 
-  # Node Exporter (System metrics)
   node-exporter:
     image: prom/node-exporter:latest
     container_name: node-exporter
@@ -78,7 +83,6 @@ services:
     networks:
       - monitoring
 
-  # cAdvisor (Container metrics)
   cadvisor:
     image: gcr.io/cadvisor/cadvisor:latest
     container_name: cadvisor
@@ -98,5 +102,8 @@ networks:
     driver: bridge
 
 volumes:
+  uploads:
+  results:
+  gradcam_results:
   prometheus-data:
   grafana-data:

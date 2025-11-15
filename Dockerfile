@@ -1,5 +1,5 @@
-# Use Python 3.12 slim
-FROM python:3.12-slim-trixie
+# Use Python 3.12 slim (Bookworm is more stable than Trixie)
+FROM python:3.12-slim-bookworm
 
 # Copy uv binary
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
@@ -8,30 +8,30 @@ COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 WORKDIR /app
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
-    libgl1-mesa-glx \
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libgl1 \
     libglib2.0-0 \
     libsm6 \
     libxext6 \
-    libxrender-dev \
+    libxrender1 \
     libgomp1 \
     git \
     curl \
-    && rm -rf /var/lib/apt/lists/*
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && apt-get clean
 
-# Copy project files
-COPY pyproject.toml .
-COPY uv.lock .
+# Copy dependency files first (for better caching)
+COPY pyproject.toml uv.lock ./
 
 # Install dependencies with uv (much faster!)
 RUN uv sync --frozen --no-dev
 
-# Copy application code
-COPY main.py .
-COPY model_service.py .
+# Copy model weights (separate layer for easier updates)
+COPY weights/best/best.pt /app/best.pt
 
-# Copy model weights (adjust path as needed)
-COPY ./weights/best/best.pt .
+# Copy application code (changes frequently, so put last)
+COPY main.py model_service.py ./
 
 # Create necessary directories
 RUN mkdir -p uploads results gradcam_results
@@ -43,5 +43,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
     CMD curl -f http://localhost:8000/ || exit 1
 
-# Run the application
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+# Run the application using uv
+CMD ["uv", "run", "uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]

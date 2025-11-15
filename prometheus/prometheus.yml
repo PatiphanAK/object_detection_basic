@@ -17,18 +17,22 @@ scrape_configs:
     static_configs:
       - targets: ["localhost:9090"]
 
-  # FastAPI YOLO Service
+  # FastAPI YOLO Service (ปรับให้ scrape เร็วขึ้น)
   - job_name: "yolo-api"
     static_configs:
       - targets: ["yolo-api:8000"]
     metrics_path: "/metrics"
+    scrape_interval: 5s
+    scrape_timeout: 4s
 
   # Node Exporter (System metrics)
   - job_name: "node-exporter"
     static_configs:
       - targets: ["node-exporter:9100"]
+    scrape_interval: 10s # ← เพิ่ม (optional)
 
   # cAdvisor (Container metrics)
   - job_name: "cadvisor"
     static_configs:
       - targets: ["cadvisor:8080"]
+    scrape_interval: 10s # ← เพิ่ม (optional)
