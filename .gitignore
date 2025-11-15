@@ -22,3 +22,5 @@ uploads/
 temp/
 *.jpg.bak
 *.png.bak
+
+.venv/
