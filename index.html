@@ -1,0 +1,740 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>YOLO Object Detection - AI Vision</title>
+        <style>
+            * {
+                margin: 0;
+                padding: 0;
+                box-sizing: border-box;
+            }
+
+            :root {
+                --primary: #6366f1;
+                --primary-dark: #4f46e5;
+                --secondary: #8b5cf6;
+                --success: #10b981;
+                --danger: #ef4444;
+                --warning: #f59e0b;
+                --dark: #1f2937;
+                --gray: #6b7280;
+                --light: #f9fafb;
+                --border: #e5e7eb;
+            }
+
+            body {
+                font-family:
+                    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto,
+                    "Helvetica Neue", Arial, sans-serif;
+                background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                min-height: 100vh;
+                padding: 2rem 1rem;
+                color: var(--dark);
+            }
+
+            .container {
+                max-width: 1400px;
+                margin: 0 auto;
+            }
+
+            .header {
+                text-align: center;
+                margin-bottom: 3rem;
+                color: white;
+            }
+
+            .header h1 {
+                font-size: 3rem;
+                font-weight: 800;
+                margin-bottom: 0.5rem;
+                text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.2);
+            }
+
+            .header p {
+                font-size: 1.2rem;
+                opacity: 0.95;
+            }
+
+            .main-card {
+                background: white;
+                border-radius: 1.5rem;
+                box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+                padding: 2.5rem;
+                margin-bottom: 2rem;
+            }
+
+            .upload-zone {
+                border: 3px dashed var(--border);
+                border-radius: 1rem;
+                padding: 3rem;
+                text-align: center;
+                transition: all 0.3s ease;
+                cursor: pointer;
+                position: relative;
+                overflow: hidden;
+            }
+
+            .upload-zone:hover {
+                border-color: var(--primary);
+                background: var(--light);
+            }
+
+            .upload-zone.dragover {
+                border-color: var(--primary);
+                background: #eef2ff;
+                transform: scale(1.02);
+            }
+
+            .upload-icon {
+                font-size: 4rem;
+                margin-bottom: 1rem;
+            }
+
+            .upload-zone h3 {
+                font-size: 1.5rem;
+                margin-bottom: 0.5rem;
+                color: var(--dark);
+            }
+
+            .upload-zone p {
+                color: var(--gray);
+                margin-bottom: 1.5rem;
+            }
+
+            .btn {
+                padding: 0.875rem 2rem;
+                border: none;
+                border-radius: 0.75rem;
+                font-size: 1rem;
+                font-weight: 600;
+                cursor: pointer;
+                transition: all 0.3s ease;
+                display: inline-flex;
+                align-items: center;
+                gap: 0.5rem;
+            }
+
+            .btn-primary {
+                background: var(--primary);
+                color: white;
+            }
+
+            .btn-primary:hover:not(:disabled) {
+                background: var(--primary-dark);
+                transform: translateY(-2px);
+                box-shadow: 0 10px 20px rgba(99, 102, 241, 0.3);
+            }
+
+            .btn:disabled {
+                opacity: 0.6;
+                cursor: not-allowed;
+            }
+
+            .file-input {
+                display: none;
+            }
+
+            .preview-section {
+                display: none;
+                margin-top: 2rem;
+            }
+
+            .preview-section.active {
+                display: block;
+            }
+
+            .image-preview {
+                border-radius: 1rem;
+                overflow: hidden;
+                margin-bottom: 1.5rem;
+                box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+                background: var(--light);
+            }
+
+            .image-preview img {
+                width: 100%;
+                height: auto;
+                display: block;
+            }
+
+            .results-grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+                gap: 1.5rem;
+                margin-top: 2rem;
+            }
+
+            .result-card {
+                background: var(--light);
+                border-radius: 1rem;
+                padding: 1.5rem;
+                border: 2px solid var(--border);
+            }
+
+            .result-card h3 {
+                font-size: 1.25rem;
+                margin-bottom: 1rem;
+                color: var(--dark);
+                display: flex;
+                align-items: center;
+                gap: 0.5rem;
+            }
+
+            .stats-grid {
+                display: grid;
+                grid-template-columns: repeat(2, 1fr);
+                gap: 1rem;
+            }
+
+            .stat-item {
+                background: white;
+                padding: 1rem;
+                border-radius: 0.75rem;
+                border-left: 4px solid var(--primary);
+            }
+
+            .stat-label {
+                font-size: 0.875rem;
+                color: var(--gray);
+                margin-bottom: 0.25rem;
+            }
+
+            .stat-value {
+                font-size: 1.5rem;
+                font-weight: 700;
+                color: var(--dark);
+            }
+
+            .detection-list {
+                max-height: 300px;
+                overflow-y: auto;
+                margin-top: 1rem;
+            }
+
+            .detection-item {
+                background: white;
+                padding: 0.875rem;
+                border-radius: 0.5rem;
+                margin-bottom: 0.5rem;
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+            }
+
+            .detection-label {
+                font-weight: 600;
+                color: var(--dark);
+            }
+
+            .detection-confidence {
+                background: var(--success);
+                color: white;
+                padding: 0.25rem 0.75rem;
+                border-radius: 1rem;
+                font-size: 0.875rem;
+                font-weight: 600;
+            }
+
+            .loading {
+                display: none;
+                text-align: center;
+                padding: 2rem;
+            }
+
+            .loading.active {
+                display: block;
+            }
+
+            .spinner {
+                border: 4px solid var(--border);
+                border-top: 4px solid var(--primary);
+                border-radius: 50%;
+                width: 60px;
+                height: 60px;
+                animation: spin 1s linear infinite;
+                margin: 0 auto 1rem;
+            }
+
+            @keyframes spin {
+                0% {
+                    transform: rotate(0deg);
+                }
+                100% {
+                    transform: rotate(360deg);
+                }
+            }
+
+            .error {
+                background: #fee;
+                border: 2px solid var(--danger);
+                color: var(--danger);
+                padding: 1rem;
+                border-radius: 0.75rem;
+                margin-top: 1rem;
+                display: none;
+            }
+
+            .error.active {
+                display: block;
+            }
+
+            .tabs {
+                display: flex;
+                gap: 1rem;
+                margin-bottom: 1.5rem;
+                border-bottom: 2px solid var(--border);
+                flex-wrap: wrap;
+            }
+
+            .tab {
+                padding: 0.875rem 1.5rem;
+                background: none;
+                border: none;
+                border-bottom: 3px solid transparent;
+                cursor: pointer;
+                font-weight: 600;
+                color: var(--gray);
+                transition: all 0.3s ease;
+            }
+
+            .tab.active {
+                color: var(--primary);
+                border-bottom-color: var(--primary);
+            }
+
+            .tab-content {
+                display: none;
+            }
+
+            .tab-content.active {
+                display: block;
+            }
+
+            .badge {
+                display: inline-block;
+                padding: 0.25rem 0.75rem;
+                border-radius: 1rem;
+                font-size: 0.875rem;
+                font-weight: 600;
+            }
+
+            .badge-success {
+                background: #d1fae5;
+                color: #065f46;
+            }
+
+            .image-loading {
+                text-align: center;
+                padding: 2rem;
+                color: var(--gray);
+            }
+
+            @media (max-width: 768px) {
+                .header h1 {
+                    font-size: 2rem;
+                }
+
+                .main-card {
+                    padding: 1.5rem;
+                }
+
+                .stats-grid {
+                    grid-template-columns: 1fr;
+                }
+
+                .results-grid {
+                    grid-template-columns: 1fr;
+                }
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🔍 YOLO Object Detection</h1>
+                <p>AI-Powered Image Analysis with Attention Visualization</p>
+            </div>
+
+            <div class="main-card">
+                <div class="upload-zone" id="uploadZone">
+                    <div class="upload-icon">📸</div>
+                    <h3>Upload Image for Detection</h3>
+                    <p>Drag & drop your image here, or click to browse</p>
+                    <button class="btn btn-primary" id="selectBtn">
+                        📁 Select Image
+                    </button>
+                    <input
+                        type="file"
+                        id="fileInput"
+                        class="file-input"
+                        accept="image/*"
+                    />
+                </div>
+
+                <div class="loading" id="loading">
+                    <div class="spinner"></div>
+                    <p style="color: var(--gray); font-size: 1.1rem">
+                        🤖 Analyzing image with AI...
+                    </p>
+                </div>
+
+                <div class="error" id="error"></div>
+
+                <div class="preview-section" id="previewSection">
+                    <div class="tabs">
+                        <button class="tab active" data-tab="original">
+                            📷 Original Image
+                        </button>
+                        <button class="tab" data-tab="bbox">
+                            🎯 Bounding Boxes
+                        </button>
+                        <button class="tab" data-tab="attention">
+                            🔥 Attention Map
+                        </button>
+                        <button class="tab" data-tab="results">
+                            📊 Detection Results
+                        </button>
+                    </div>
+
+                    <div class="tab-content active" id="tab-original">
+                        <div class="image-preview" id="originalPreview"></div>
+                    </div>
+
+                    <div class="tab-content" id="tab-bbox">
+                        <div class="image-preview" id="bboxPreview">
+                            <div class="image-loading">
+                                Loading bounding boxes...
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-content" id="tab-attention">
+                        <div class="image-preview" id="attentionPreview">
+                            <div class="image-loading">
+                                Loading attention map...
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="tab-content" id="tab-results">
+                        <div class="results-grid">
+                            <div class="result-card">
+                                <h3>📊 Detection Statistics</h3>
+                                <div class="stats-grid" id="statsGrid"></div>
+                            </div>
+
+                            <div class="result-card">
+                                <h3>⏱️ Performance Metrics</h3>
+                                <div
+                                    class="stats-grid"
+                                    id="performanceGrid"
+                                ></div>
+                            </div>
+                        </div>
+
+                        <div class="result-card" style="margin-top: 1.5rem">
+                            <h3>🎯 Detected Objects</h3>
+                            <div
+                                class="detection-list"
+                                id="detectionList"
+                            ></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const API_BASE_URL = "http://localhost:8000";
+
+            // Elements
+            const uploadZone = document.getElementById("uploadZone");
+            const fileInput = document.getElementById("fileInput");
+            const selectBtn = document.getElementById("selectBtn");
+            const loading = document.getElementById("loading");
+            const error = document.getElementById("error");
+            const previewSection = document.getElementById("previewSection");
+            const originalPreview = document.getElementById("originalPreview");
+            const bboxPreview = document.getElementById("bboxPreview");
+            const attentionPreview =
+                document.getElementById("attentionPreview");
+            const statsGrid = document.getElementById("statsGrid");
+            const performanceGrid = document.getElementById("performanceGrid");
+            const detectionList = document.getElementById("detectionList");
+
+            // Tab switching
+            document.querySelectorAll(".tab").forEach((tab) => {
+                tab.addEventListener("click", () => {
+                    const tabName = tab.dataset.tab;
+
+                    document
+                        .querySelectorAll(".tab")
+                        .forEach((t) => t.classList.remove("active"));
+                    document
+                        .querySelectorAll(".tab-content")
+                        .forEach((tc) => tc.classList.remove("active"));
+
+                    tab.classList.add("active");
+                    document
+                        .getElementById(`tab-${tabName}`)
+                        .classList.add("active");
+                });
+            });
+
+            // File selection
+            selectBtn.addEventListener("click", () => fileInput.click());
+            fileInput.addEventListener("change", handleFileSelect);
+
+            // Drag and drop
+            uploadZone.addEventListener("click", (e) => {
+                if (
+                    e.target === uploadZone ||
+                    e.target.closest(".upload-icon, h3, p")
+                ) {
+                    fileInput.click();
+                }
+            });
+
+            uploadZone.addEventListener("dragover", (e) => {
+                e.preventDefault();
+                uploadZone.classList.add("dragover");
+            });
+
+            uploadZone.addEventListener("dragleave", () => {
+                uploadZone.classList.remove("dragover");
+            });
+
+            uploadZone.addEventListener("drop", (e) => {
+                e.preventDefault();
+                uploadZone.classList.remove("dragover");
+
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleFile(files[0]);
+                }
+            });
+
+            function handleFileSelect(e) {
+                const file = e.target.files[0];
+                if (file) {
+                    handleFile(file);
+                }
+            }
+
+            async function handleFile(file) {
+                if (!file.type.startsWith("image/")) {
+                    showError("Please select a valid image file");
+                    return;
+                }
+
+                hideError();
+                showLoading();
+
+                // Show original preview
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    originalPreview.innerHTML = `<img src="${e.target.result}" alt="Original">`;
+                };
+                reader.readAsDataURL(file);
+
+                // Upload and predict
+                try {
+                    const formData = new FormData();
+                    formData.append("file", file);
+
+                    const response = await fetch(`${API_BASE_URL}/predict`, {
+                        method: "POST",
+                        body: formData,
+                    });
+
+                    if (!response.ok) {
+                        const errorData = await response
+                            .json()
+                            .catch(() => ({}));
+                        throw new Error(
+                            errorData.detail ||
+                                `Server error: ${response.status}`,
+                        );
+                    }
+
+                    const data = await response.json();
+                    console.log("✅ Full API Response:", data);
+                    displayResults(data);
+                } catch (err) {
+                    showError(`Failed to process image: ${err.message}`);
+                    console.error("❌ Error:", err);
+                } finally {
+                    hideLoading();
+                }
+            }
+
+            function displayResults(data) {
+                console.log("API Response:", data);
+
+                const {
+                    detections,
+                    bbox_image_url,
+                    attention_visualization_url,
+                    processing_time,
+                } = data;
+
+                // Show results section
+                previewSection.classList.add("active");
+
+                // Display bounding box image
+                const bboxUrl = `${API_BASE_URL}${bbox_image_url}`;
+                console.log("Loading bbox image:", bboxUrl);
+
+                bboxPreview.innerHTML = `
+                    <img src="${bboxUrl}"
+                         alt="Bounding Boxes"
+                         onload="console.log('Bbox loaded'); this.style.opacity=1"
+                         onerror="console.error('Failed to load bbox:', this.src); this.parentElement.innerHTML='<p style=padding:2rem;color:red>Failed to load bounding box image</p>'"
+                         style="opacity:0; transition: opacity 0.3s;">
+                `;
+
+                // Display attention map
+                const attentionUrl = `${API_BASE_URL}${attention_visualization_url}`;
+                console.log("Loading attention image:", attentionUrl);
+
+                attentionPreview.innerHTML = `
+                    <img src="${attentionUrl}"
+                         alt="Attention Map"
+                         onload="console.log('Attention loaded'); this.style.opacity=1"
+                         onerror="console.error('Failed to load attention:', this.src); this.parentElement.innerHTML='<p style=padding:2rem;color:red>Failed to load attention map</p>'"
+                         style="opacity:0; transition: opacity 0.3s;">
+                `;
+
+                // Calculate average confidence
+                let avgConfidence = "N/A";
+                const scores =
+                    detections.confidences || detections.scores || [];
+
+                if (scores.length > 0) {
+                    const sum = scores.reduce((a, b) => a + b, 0);
+                    avgConfidence =
+                        ((sum / scores.length) * 100).toFixed(1) + "%";
+                }
+
+                // Statistics
+                const uniqueClasses = detections.labels
+                    ? new Set(detections.labels).size
+                    : 0;
+                statsGrid.innerHTML = `
+                    <div class="stat-item">
+                        <div class="stat-label">Total Detections</div>
+                        <div class="stat-value">${detections.num_detections || 0}</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Unique Classes</div>
+                        <div class="stat-value">${uniqueClasses}</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Avg Confidence</div>
+                        <div class="stat-value">${avgConfidence}</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Status</div>
+                        <div class="stat-value">
+                            <span class="badge badge-success">✓ Success</span>
+                        </div>
+                    </div>
+                `;
+
+                // Performance metrics
+                const fps =
+                    processing_time.total_seconds > 0
+                        ? (1 / processing_time.total_seconds).toFixed(2)
+                        : "N/A";
+
+                performanceGrid.innerHTML = `
+                    <div class="stat-item">
+                        <div class="stat-label">Inference Time</div>
+                        <div class="stat-value">${processing_time.inference_seconds}s</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Bbox Time</div>
+                        <div class="stat-value">${processing_time.bbox_seconds}s</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Attention Time</div>
+                        <div class="stat-value">${processing_time.attention_seconds}s</div>
+                    </div>
+                    <div class="stat-item">
+                        <div class="stat-label">Total Time</div>
+                        <div class="stat-value">${processing_time.total_seconds}s</div>
+                    </div>
+                `;
+
+                // Detection list
+                if (detections.labels && detections.labels.length > 0) {
+                    const scores =
+                        detections.confidences || detections.scores || [];
+
+                    detectionList.innerHTML = detections.labels
+                        .map((label, idx) => {
+                            const confidence = scores[idx]
+                                ? (scores[idx] * 100).toFixed(1)
+                                : "N/A";
+
+                            return `
+                                <div class="detection-item">
+                                    <span class="detection-label">${label}</span>
+                                    <span class="detection-confidence">${confidence}%</span>
+                                </div>
+                            `;
+                        })
+                        .join("");
+                } else {
+                    detectionList.innerHTML =
+                        '<p style="color: var(--gray); text-align: center; padding: 2rem;">No objects detected</p>';
+                }
+            }
+
+            function showLoading() {
+                loading.classList.add("active");
+                uploadZone.style.opacity = "0.5";
+                selectBtn.disabled = true;
+            }
+
+            function hideLoading() {
+                loading.classList.remove("active");
+                uploadZone.style.opacity = "1";
+                selectBtn.disabled = false;
+            }
+
+            function showError(message) {
+                error.textContent = `❌ ${message}`;
+                error.classList.add("active");
+            }
+
+            function hideError() {
+                error.classList.remove("active");
+            }
+
+            // Check API health on load
+            async function checkAPIHealth() {
+                try {
+                    const response = await fetch(`${API_BASE_URL}/health`);
+                    const data = await response.json();
+                    console.log("✅ API Status:", data);
+
+                    if (data.status !== "healthy") {
+                        showError(
+                            "API is running but model is not loaded properly",
+                        );
+                    }
+                } catch (err) {
+                    console.warn("⚠️ API not available:", err.message);
+                    showError(
+                        "Cannot connect to API server. Please make sure it is running on http://localhost:8000",
+                    );
+                }
+            }
+
+            checkAPIHealth();
+        </script>
+    </body>
+</html>
