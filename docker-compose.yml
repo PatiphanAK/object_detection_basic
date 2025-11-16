@@ -1,17 +1,17 @@
-version: "3.8"
 services:
   yolo-api:
     build:
       context: .
       dockerfile: Dockerfile
-    image: yolo-inference:latest # ตั้งชื่อ image
+    image: yolo-inference:latest
     container_name: yolo-inference-api
     ports:
       - "8000:8000"
     volumes:
-      - uploads:/app/uploads # ใช้ named volume แทน bind mount
-      - results:/app/results
-      - gradcam_results:/app/gradcam_results
+      # ใช้ bind mounts เพื่อให้เห็นไฟล์บน host machine
+      - ./uploads:/app/uploads
+      - ./results:/app/results
+      - ./gradcam_results:/app/gradcam_results
     environment:
       - MODEL_PATH=best.pt
       - PYTHONUNBUFFERED=1
@@ -102,8 +102,5 @@ networks:
     driver: bridge
 
 volumes:
-  uploads:
-  results:
-  gradcam_results:
   prometheus-data:
   grafana-data:

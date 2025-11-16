@@ -5,10 +5,13 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 
+import cv2
+import numpy as np
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from prometheus_client import (
     CONTENT_TYPE_LATEST,
     Counter,
@@ -49,7 +52,6 @@ instrumentator = Instrumentator(
     inprogress_labels=True,
 )
 
-# Instrument app (ไม่ expose ที่นี่)
 instrumentator.instrument(app)
 
 # Custom Prometheus Metrics
@@ -79,6 +81,12 @@ ATTENTION_DIR = "gradcam_results"
 for directory in [UPLOAD_DIR, RESULT_DIR, ATTENTION_DIR]:
     os.makedirs(directory, exist_ok=True)
 
+# Mount static directories
+app.mount("/results", StaticFiles(directory=RESULT_DIR), name="results")
+app.mount(
+    "/gradcam_results", StaticFiles(directory=ATTENTION_DIR), name="gradcam_results"
+)
+
 # Initialize YOLO Service
 MODEL_PATH = os.getenv("MODEL_PATH", "best.pt")
 yolo_service = YOLOInferenceService(MODEL_PATH)
@@ -88,6 +96,68 @@ if yolo_service.model is not None:
     MODEL_LOAD_STATUS.set(1)
 else:
     MODEL_LOAD_STATUS.set(0)
+
+
+def draw_bounding_boxes(image_path, detections, save_dir):
+    """
+    วาด bounding boxes บนภาพและบันทึก
+    """
+    import cv2
+    import numpy as np
+
+    img = cv2.imread(image_path)
+    if img is None:
+        raise ValueError(f"Cannot read image: {image_path}")
+
+    boxes = detections.get("boxes", [])
+    labels = detections.get("labels", [])
+    scores = detections.get("confidences", detections.get("scores", []))
+
+    # สร้างสีสำหรับแต่ละ class
+    np.random.seed(42)
+    colors = {}
+    for label in set(labels):
+        colors[label] = tuple(map(int, np.random.randint(0, 255, 3)))
+
+    for box, label, score in zip(boxes, labels, scores):
+        x1, y1, x2, y2 = map(int, box)
+        color = colors.get(label, (0, 255, 0))
+
+        # วาด bounding box
+        cv2.rectangle(img, (x1, y1), (x2, y2), color, 2)
+
+        # เพิ่ม label และ confidence
+        text = f"{label} {score:.2f}"
+        (text_width, text_height), _ = cv2.getTextSize(
+            text, cv2.FONT_HERSHEY_SIMPLEX, 0.6, 2
+        )
+
+        # พื้นหลังสำหรับ text
+        cv2.rectangle(
+            img,
+            (x1, y1 - text_height - 10),
+            (x1 + text_width, y1),
+            color,
+            -1,
+        )
+
+        # วาด text
+        cv2.putText(
+            img,
+            text,
+            (x1, y1 - 5),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (255, 255, 255),
+            2,
+        )
+
+    # บันทึกภาพ
+    file_id = Path(image_path).stem
+    output_path = os.path.join(save_dir, f"bbox_{file_id}.png")
+    cv2.imwrite(output_path, img)
+
+    return output_path
 
 
 @app.get("/")
@@ -103,7 +173,7 @@ async def root():
 
 @app.get("/metrics")
 async def metrics():
-    """Prometheus metrics endpoint - expose all registered metrics"""
+    """Prometheus metrics endpoint"""
     return Response(content=generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
 
@@ -124,11 +194,8 @@ async def health():
 @app.post("/predict")
 async def predict(file: UploadFile = File(...)):
     """
-    Predict objects in image and return both:
-    1. Bounding boxes (JSON)
-    2. Attention visualization (image path)
+    Predict objects และส่งกลับ JSON พร้อม URLs ของรูปภาพ
     """
-
     if not file.content_type.startswith("image/"):
         raise HTTPException(status_code=400, detail="File must be an image")
 
@@ -141,44 +208,51 @@ async def predict(file: UploadFile = File(...)):
         with open(upload_path, "wb") as buffer:
             shutil.copyfileobj(file.file, buffer)
 
-        print(f"📥 Received image: {file.filename}")
-
         # Run inference with timing
         inference_start = time.time()
         detections = yolo_service.predict(upload_path)
-        inference_duration = time.time() - inference_start
-        INFERENCE_DURATION.observe(inference_duration)
+        inference_time = time.time() - inference_start
+        INFERENCE_DURATION.observe(inference_time)
 
-        # Update detection metrics
-        num_detections = detections["num_detections"]
-        DETECTIONS_COUNT.inc(num_detections)
-
+        # Update metrics
+        DETECTIONS_COUNT.inc(detections["num_detections"])
         for label in detections["labels"]:
             DETECTIONS_PER_CLASS.labels(class_name=label).inc()
 
-        print(f"✅ Detected {num_detections} objects in {inference_duration:.3f}s")
+        # Generate bounding box image
+        bbox_start = time.time()
+        bbox_image_path = draw_bounding_boxes(upload_path, detections, RESULT_DIR)
+        bbox_time = time.time() - bbox_start
 
-        # Generate attention visualization with timing
+        # Generate attention map
         attention_start = time.time()
         attention_path = yolo_service.generate_attention(
             upload_path, save_dir=ATTENTION_DIR
         )
-        attention_duration = time.time() - attention_start
-        ATTENTION_DURATION.observe(attention_duration)
+        attention_time = time.time() - attention_start
+        ATTENTION_DURATION.observe(attention_time)
 
-        print(f"✅ Generated attention map in {attention_duration:.3f}s")
+        # สร้าง URLs สำหรับดึงรูปภาพ
+        bbox_filename = Path(bbox_image_path).name
+        attention_filename = Path(attention_path).name
+
+        bbox_url = f"/results/{bbox_filename}"
+        attention_url = f"/gradcam_results/{attention_filename}"
 
         # Prepare response
+        total_time = inference_time + bbox_time + attention_time
         response = {
             "status": "success",
             "file_id": file_id,
             "original_filename": file.filename,
             "detections": detections,
-            "attention_visualization": attention_path,
+            "bbox_image_url": bbox_url,
+            "attention_visualization_url": attention_url,
             "processing_time": {
-                "inference_seconds": round(inference_duration, 3),
-                "attention_seconds": round(attention_duration, 3),
-                "total_seconds": round(inference_duration + attention_duration, 3),
+                "inference_seconds": round(inference_time, 3),
+                "bbox_seconds": round(bbox_time, 3),
+                "attention_seconds": round(attention_time, 3),
+                "total_seconds": round(total_time, 3),
             },
             "timestamp": datetime.now().isoformat(),
         }
@@ -186,64 +260,35 @@ async def predict(file: UploadFile = File(...)):
         return JSONResponse(content=response)
 
     except Exception as e:
-        print(f"❌ Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/bbox/{file_id}")
+async def get_bbox_image(file_id: str):
+    """Download bounding box image"""
+    bbox_files = list(Path(RESULT_DIR).glob(f"bbox_*{file_id}*.*"))
+
+    if not bbox_files:
+        raise HTTPException(status_code=404, detail="Bounding box image not found")
+
+    bbox_path = str(bbox_files[0])
+    return FileResponse(
+        bbox_path, media_type="image/png", filename=f"bbox_{file_id}.png"
+    )
 
 
 @app.get("/attention/{file_id}")
 async def get_attention_image(file_id: str):
     """Download attention visualization image"""
-    attention_files = list(Path(ATTENTION_DIR).glob(f"attention_*{file_id}*.png"))
+    attention_files = list(Path(ATTENTION_DIR).glob(f"*{file_id}*.*"))
 
     if not attention_files:
         raise HTTPException(status_code=404, detail="Attention visualization not found")
 
     attention_path = str(attention_files[0])
-
     return FileResponse(
         attention_path, media_type="image/png", filename=f"attention_{file_id}.png"
     )
-
-
-@app.post("/predict-with-image")
-async def predict_with_image(file: UploadFile = File(...)):
-    """Alternative endpoint that returns attention image directly as bytes"""
-    file_id = str(uuid.uuid4())
-    file_extension = Path(file.filename).suffix
-    upload_path = os.path.join(UPLOAD_DIR, f"{file_id}{file_extension}")
-
-    try:
-        with open(upload_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
-
-        # Run inference
-        inference_start = time.time()
-        detections = yolo_service.predict(upload_path)
-        INFERENCE_DURATION.observe(time.time() - inference_start)
-
-        # Update metrics
-        DETECTIONS_COUNT.inc(detections["num_detections"])
-        for label in detections["labels"]:
-            DETECTIONS_PER_CLASS.labels(class_name=label).inc()
-
-        # Generate attention
-        attention_start = time.time()
-        attention_path = yolo_service.generate_attention(
-            upload_path, save_dir=ATTENTION_DIR
-        )
-        ATTENTION_DURATION.observe(time.time() - attention_start)
-
-        return FileResponse(
-            attention_path,
-            media_type="image/png",
-            headers={
-                "X-Detections": str(len(detections["boxes"])),
-                "X-File-ID": file_id,
-            },
-        )
-
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.delete("/cleanup")

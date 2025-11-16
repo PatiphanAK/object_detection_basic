@@ -32,7 +32,7 @@ EC2_PATH="/home/ubuntu/yolo-app"
 print_header() {
     echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
     echo -e "${BLUE}║   🚀 YOLO Inference Deployment Tool   ║${NC}"
-    echo -e "${BLUE}╔════════════════════════════════════════╗${NC}"
+    echo -e "${BLUE}╚════════════════════════════════════════╝${NC}"
 }
 
 print_info() {
@@ -163,12 +163,37 @@ check_dependencies() {
 check_model_weights() {
     print_info "Checking model weights..."
 
-    if [[ ! -f "weights/best/best.pt" ]]; then
-        print_error "Model weights not found at weights/best/best.pt"
+    # ตรวจสอบหลายตำแหน่งที่เป็นไปได้
+    if [[ -f "best.pt" ]]; then
+        print_success "Model weights found: best.pt"
+    elif [[ -f "weights/best/best.pt" ]]; then
+        print_success "Model weights found: weights/best/best.pt"
+    elif [[ -f "weights/best.pt" ]]; then
+        print_success "Model weights found: weights/best.pt"
+    else
+        print_error "Model weights not found!"
+        print_info "Please place your model at one of these locations:"
+        echo "   • ./best.pt"
+        echo "   • ./weights/best.pt"
+        echo "   • ./weights/best/best.pt"
         exit 1
     fi
+}
 
-    print_success "Model weights found"
+# =========================================
+# Setup Functions
+# =========================================
+
+setup_directories() {
+    print_info "Setting up directories for bind mounts..."
+
+    # สร้าง directories สำหรับ bind mounts
+    mkdir -p uploads results gradcam_results
+
+    # ตั้ง permissions
+    chmod 777 uploads results gradcam_results
+
+    print_success "Directories created: uploads/, results/, gradcam_results/"
 }
 
 # =========================================
@@ -208,12 +233,15 @@ deploy_local() {
     print_info "🏠 Starting LOCAL deployment..."
     echo ""
 
+    # Setup directories
+    setup_directories
+
+    # Stop old containers and remove volumes
+    print_info "Stopping old containers and cleaning up..."
+    $DOCKER_COMPOSE down -v || true
+
     # Build
     build_image
-
-    # Stop old containers
-    print_info "Stopping old containers..."
-    $DOCKER_COMPOSE down || true
 
     # Start new containers
     print_info "Starting new containers..."
@@ -233,7 +261,7 @@ deploy_local() {
     local attempt=1
 
     while [[ $attempt -le $max_attempts ]]; do
-        if curl -s -f http://localhost:8000/ > /dev/null 2>&1; then
+        if curl -s -f http://localhost:8000/health > /dev/null 2>&1; then
             print_success "API is healthy!"
             break
         fi
@@ -255,14 +283,22 @@ deploy_local() {
     print_info "📊 Services are available at:"
     echo "   • API:        http://localhost:8000"
     echo "   • API Docs:   http://localhost:8000/docs"
+    echo "   • Health:     http://localhost:8000/health"
+    echo "   • Metrics:    http://localhost:8000/metrics"
     echo "   • Prometheus: http://localhost:9090"
     echo "   • Grafana:    http://localhost:3000 (admin/admin)"
     echo "   • cAdvisor:   http://localhost:8080"
+    echo ""
+    print_info "📁 Output directories (on host machine):"
+    echo "   • uploads/           - Uploaded images"
+    echo "   • results/           - Bounding box images"
+    echo "   • gradcam_results/   - Attention maps"
     echo ""
     print_info "📝 Useful commands:"
     echo "   • View logs:     $DOCKER_COMPOSE logs -f yolo-api"
     echo "   • Stop all:      $DOCKER_COMPOSE down"
     echo "   • Restart:       $DOCKER_COMPOSE restart yolo-api"
+    echo "   • Clean all:     $DOCKER_COMPOSE down -v && rm -rf uploads results gradcam_results"
 }
 
 # =========================================
@@ -288,18 +324,18 @@ test_ssh_connection() {
 setup_ec2_environment() {
     print_info "Setting up EC2 environment..."
 
-    ssh "$EC2_USER@$EC2_HOST" << 'EOF'
+    ssh "$EC2_USER@$EC2_HOST" << EOF
         # Install Docker if not exists
         if ! command -v docker &> /dev/null; then
             echo "Installing Docker..."
             sudo apt-get update
             sudo apt-get install -y docker.io docker-compose
-            sudo usermod -aG docker $USER
-            newgrp docker
+            sudo usermod -aG docker \$USER
         fi
 
         # Create deployment directory
-        mkdir -p ~/yolo-app/{prometheus,grafana/provisioning,grafana/dashboards}
+        mkdir -p $EC2_PATH/{uploads,results,gradcam_results,prometheus,grafana/provisioning,grafana/dashboards}
+        chmod 777 $EC2_PATH/{uploads,results,gradcam_results}
 
         echo "EC2 environment ready"
 EOF
@@ -347,7 +383,7 @@ deploy_on_ec2() {
 
         # Stop old containers
         echo "Stopping old containers..."
-        \$COMPOSE_CMD down || true
+        \$COMPOSE_CMD down -v || true
 
         # Start new containers
         echo "Starting new containers..."
@@ -373,7 +409,7 @@ verify_ec2_deployment() {
     local attempt=1
 
     while [[ $attempt -le $max_attempts ]]; do
-        if curl -s -f "http://$EC2_HOST:8000/" > /dev/null 2>&1; then
+        if curl -s -f "http://$EC2_HOST:8000/health" > /dev/null 2>&1; then
             print_success "API is healthy on EC2!"
             return 0
         fi
@@ -423,6 +459,7 @@ deploy_ec2() {
     print_info "📊 Services should be available at:"
     echo "   • API:        http://$EC2_HOST:8000"
     echo "   • API Docs:   http://$EC2_HOST:8000/docs"
+    echo "   • Health:     http://$EC2_HOST:8000/health"
     echo "   • Prometheus: http://$EC2_HOST:9090"
     echo "   • Grafana:    http://$EC2_HOST:3000"
     echo "   • cAdvisor:   http://$EC2_HOST:8080"
