@@ -26,3 +26,11 @@ temp/
 .venv/
 uv.lock
 .python-version
+
+mlrun/
+gradcam_results/
+runs/
+results/
+mlflow.db
+.ipynb_checkpoints/
+mlruns/
